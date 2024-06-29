@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Excel2CSV</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100vh;
+        }
+
+        .upload-container {
+            background-color: #fff;
+            border: 2px dashed #007bff;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 500px;
+            padding: 40px;
+            text-align: center;
+            transition: background-color 0.3s;
+            margin-top: 50px;
+        }
+
+        .upload-container.dragover {
+            background-color: #e0e0e0;
+        }
+
+        .upload-container h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .upload-container p {
+            font-size: 16px;
+            margin-bottom: 20px;
+            color: #666;
+        }
+
+        .upload-container input[type="file"] {
+            display: none;
+        }
+
+        .upload-container label {
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+
+        .upload-container button {
+            background-color: #007bff;
+            color: #fff;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .csv-output {
+            width: calc(100% - 40px);
+            /* Adjust margin */
+            max-width: 1000px;
+            /* Set a maximum width if needed */
+            margin: 20px auto;
+            /* Center the box with a margin */
+            background-color: #fff;
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid #ddd;
+            overflow: auto;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="upload-container" id="upload-container">
+        <h1>Upload an Excel File</h1>
+        <p>Drag and drop an Excel file here, or click to select one</p>
+        <input type="file" id="fileInput" name="excelFile" accept=".xlsx, .xls">
+        <label for="fileInput">Choose a file</label>
+        <button id="uploadButton">Upload</button>
+    </div>
+    <div class="csv-output" id="csvOutput" hidden>
+        <h3 id="csv-filename">Converted CSV:</h3>
+
+        <table id="csvRoot"></table>
+
+        <script src="https://cdn.jsdelivr.net/npm/papaparse@5.2.0/papaparse.min.js"></script>
+        <pre id="csvText"></pre>
+    </div>
+
+    <script>
+        class TableCsv {
+
+            constructor(root) {
+                this.root = root;
+            }
+
+
+            update(data, headerColumns = []) {
+                this.clear();
+                this.setHeader(headerColumns);
+                this.setBody(data);
+            }
+
+            clear() {
+                this.root.innerHTML = "";
+            }
+
+
+            setHeader(headerColumns) {
+                this.root.insertAdjacentHTML(
+                    "afterbegin",
+                    `
+            <thead>
+                <tr>
+                    ${headerColumns.map((text) => `<th>${text}</th>`).join("")}
+                </tr>
+            </thead>
+        `
+                );
+            }
+
+
+            setBody(data) {
+                const rowsHtml = data.map((row) => {
+                    return `
+                <tr>
+                    ${row.map((text) => `<td>${text}</td>`).join("")}
+                </tr>
+            `;
+                });
+
+                this.root.insertAdjacentHTML(
+                    "beforeend",
+                    `
+            <tbody>
+                ${rowsHtml.join("")}
+            </tbody>
+        `
+                );
+            }
+        }
+
+        const tableRoot = document.querySelector("#csvRoot");
+
+        const tableCsv = new TableCsv(tableRoot);
+
+
+
+        const uploadContainer = document.getElementById('upload-container');
+        const fileInput = document.getElementById('fileInput');
+        const uploadButton = document.getElementById('uploadButton');
+        const csvOutput = document.getElementById('csvOutput');
+        const csvText = document.getElementById('csvText');
+        const csvFileName = document.getElementById('csv-filename');
+
+
+        const fileLabel = document.querySelector('label[for="fileInput"]')
+        // Drag and drop functionality
+        uploadContainer.addEventListener('dragover', (event) => {
+            event.preventDefault();
+            uploadContainer.classList.add('dragover');
+        });
+
+        uploadContainer.addEventListener('dragleave', () => {
+            uploadContainer.classList.remove('dragover');
+        });
+
+        uploadContainer.addEventListener('drop', (event) => {
+            event.preventDefault();
+            uploadContainer.classList.remove('dragover');
+            const files = event.dataTransfer.files;
+            if (files.length) {
+                fileInput.files = files;
+                uploadFile();
+            }
+        });
+
+        // Handle file selection
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                // Optionally, show the selected file name
+                fileLabel.textContent = fileInput.files[0].name;
+                console.log(`Selected file: ${fileInput.files[0].name}`);
+                uploadFile();
+            }
+        });
+
+        // Handle form submission
+        uploadButton.addEventListener('click', () => {
+            uploadFile();
+        });
+
+            function make_extension_csv(filename) {
+                if (filename.includes('.')) {
+                  
+                    const parts = filename.split('.');
+                    if (parts.length > 1 && parts[parts.length - 1].length > 0) {
+                        parts[parts.length - 1] = 'csv';
+                        return parts.join('.');
+                    }
+                }
+                return filename + '.csv';
+            }
+        
+        const endpt = '';//'/api/excsv';
+
+        function uploadFile() {
+            const formData = new FormData();
+            if (fileInput.files.length) {
+                formData.append('excelFile', fileInput.files[0]);
+
+                let upload_name = fileInput.files[0].name;
+                if(upload_name.length <= 1) upload_name = "conversion"; 
+
+                let dl_name = make_extension_csv(upload_name);
+                fetch(endpt + '/upload', {
+                    method: 'POST',
+                    body: formData
+                })
+                    .then(response => {
+                        if (!response.ok) {
+                            if(response.status === 400){
+                                    return response.text().then(errorMessage => {
+                                    throw new Error(errorMessage); //your fault, bad file
+                                });
+                            }
+                            else if(response.status === 413){
+                                    return response.text().then(errorMessage => {
+                                    throw new Error("Upload file size too large!"); //your fault, bad file
+                                });
+                            }
+                            else if(response.status === 500){
+                                    return response.text().then(errorMessage => {
+                                    throw new Error("Processing error! " + errorMessage); //our fault
+                                });
+                            } 
+
+                            throw new Error('Bad/unknown response from server. Try Again Later.');
+                        }
+                        return response.blob(); // Get the response as a Blob for download
+                    })
+                    .then(blob => {
+                        
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = dl_name;
+                        document.body.appendChild(a);
+                        a.click();
+                        a.remove();
+                        window.URL.revokeObjectURL(url);
+
+                   
+                        return blob.text();
+                    })
+                    .then(data => {
+                        // csvText.textContent = data;
+
+                        
+                        Papa.parse(data, {
+                            delimiter: ",",
+                            skipEmptyLines: true,
+                            complete: (results) => {
+                                tableCsv.update(results.data.slice(1), results.data[0]);
+                            }
+                        });
+                        csvOutput.hidden = false;
+                        csvFileName.textContent = dl_name;
+                    })
+                    .catch(error => {
+                        console.error('Response Error: ', error);
+                        alert(error);
+                    });
+            } else {
+                alert('No File Selected!');
+            }
+        }
+    </script>
+</body>
+
+</html>
