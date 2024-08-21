@@ -17,7 +17,7 @@ const port = 3000;
 const Stream = require('stream'); //this language is so fucked
 
 
-const IS_LOCAL = false;
+const IS_LOCAL = true;
 
 /*
 need to check size client side
